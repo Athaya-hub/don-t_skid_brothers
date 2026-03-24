@@ -1,0 +1,795 @@
+-- ZG Hub (Clean Organized Version)
+
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+local Window = Rayfield:CreateWindow({
+   Name = "ZG Hub",
+   LoadingTitle = "ZG Hub",
+   LoadingSubtitle = "Clean Version",
+   ToggleUIKeybind = "K"
+})
+
+-- Tabs
+local TeamsTab = Window:CreateTab("Teams", 4483362458)
+local ItemsTab = Window:CreateTab("Items", 4483362458)
+local WeaponsTab = Window:CreateTab("Weapons", 4483362458)
+local AcidTab = Window:CreateTab("Acid", 4483362458)
+local ServerTab = Window:CreateTab("Server", 4483362458)
+local ClientTab = Window:CreateTab("Client", 4483362458)
+
+local plr = game.Players.LocalPlayer
+
+--================ TEAMS =================--
+TeamsTab:CreateButton({
+   Name = "Become Human",
+   Callback = function()
+      plr.Character:FindFirstChildOfClass("Humanoid"):ChangeState(Enum.HumanoidStateType.Dead)
+   end
+})
+
+TeamsTab:CreateButton({
+   Name = "Become Zombie",
+   Callback = function()
+      game.TextChatService.TextChannels.RBXGeneral:SendAsync(";zombie")
+   end
+})
+
+--================ ITEMS =================--
+ItemsTab:CreateButton({
+   Name = "Give Antidote",
+   Callback = function()
+      fireclickdetector(workspace.Interaction.ToolGivers.Antidote.ClickDetector, 0)
+   end
+})
+
+ItemsTab:CreateButton({
+   Name = "Give Rainbow Potion",
+   Callback = function()
+      fireclickdetector(workspace.Interaction.ToolGivers["Rainbow Potion"].ClickDetector, 0)
+   end
+})
+
+--================ WEAPONS =================--
+for _,v in game:GetService("ReplicatedStorage").Assets.Weapons:GetChildren() do
+   if v:IsA("Tool") then
+      WeaponsTab:CreateButton({
+         Name = "Give "..v.Name,
+         Callback = function()
+            game:GetService("ReplicatedStorage").Remotes.Shop.EquipWeapon:InvokeServer(v.Name)
+         end
+      })
+   end
+end
+
+--================ VARIABLES =================--
+local targetName = ""
+local UIS = game:GetService("UserInputService")
+local camera = workspace.CurrentCamera
+local AcidRemote = game:GetService("ReplicatedStorage").Remotes.ZombieRelated.AcidSpit
+
+local acidTouchEnabled = false
+local connection = nil
+local lastShot = 0
+local delayTime = 0.1
+local hitAmount = 1
+local silentAim = false
+local aimRadius = 200
+
+local BulletRemote = game:GetService("ReplicatedStorage")
+   :WaitForChild("Remotes")
+   :WaitForChild("Guns")
+   :WaitForChild("ReplicateBullet")
+--================ ACID TAB =================--
+
+AcidTab:CreateSection("Main")
+
+AcidTab:CreateButton({
+   Name = "Summon Acid",
+   Callback = function()
+      for x = -266, 378, 18 do
+         for z = -268, 378, 18 do
+            AcidRemote:FireServer(
+               Vector3.new(x, 255, z),
+               Vector3.new(x, 245, z)
+            )
+         end
+      end
+   end
+})
+
+AcidTab:CreateSection("Targeting")
+
+AcidTab:CreateInput({
+   Name = "Target Player",
+   CurrentValue = "",
+   PlaceholderText = "Username...",
+   RemoveTextAfterFocusLost = false,
+   Callback = function(Text)
+      targetName = Text
+   end,
+})
+
+AcidTab:CreateButton({
+   Name = "Targeted Acid",
+   Callback = function()
+      local AcidRemote = game:GetService("ReplicatedStorage").Remotes.ZombieRelated.AcidSpit
+      local input = string.lower(targetName)
+
+      if input == "" then
+         warn("No target entered")
+         return
+      end
+
+      for _,v in game.Players:GetPlayers() do
+         local username = string.lower(v.Name)
+         local display = string.lower(v.DisplayName)
+
+         if username:find(input) or display:find(input) then
+            if v.Character then
+               local root = v.Character:FindFirstChild("HumanoidRootPart")
+               if root then
+
+                  -- 🔥 THIS is the hit amount system
+                  for i = 1, hitAmount do
+                     AcidRemote:FireServer(
+                        root.Position + Vector3.new(0, 10, 0),
+                        root.Position
+                     )
+                  end
+
+               end
+            end
+         end
+      end
+   end
+})
+
+AcidTab:CreateSlider({
+   Name = "Hit Amount",
+   Range = {1, 15},
+   Increment = 1,
+   CurrentValue = 1,
+   Callback = function(Value)
+      hitAmount = Value
+   end
+})
+
+ServerTab:CreateButton({
+   Name = "Fill Map (Safe)",
+   Callback = function()
+      local remote = game:GetService("ReplicatedStorage").NetworkEvents.RemoteEvent
+      local plr = game.Players.LocalPlayer
+      local char = plr.Character or plr.CharacterAdded:Wait()
+      local root = char:WaitForChild("HumanoidRootPart")
+
+      local oldPos = root.CFrame
+
+      for x = -266, 378, 40 do -- bigger spacing (less lag)
+         for z = -268, 378, 40 do
+            root.CFrame = CFrame.new(x, 5, z)
+
+            remote:FireServer("PLACE_LANDMINE") -- only 1 per spot
+
+            task.wait(0.08) -- small delay = saves your phone
+         end
+      end
+
+      root.CFrame = oldPos
+   end
+})
+
+AcidTab:CreateSection("Touch")
+
+AcidTab:CreateToggle({
+   Name = "Acid Touch",
+   CurrentValue = false,
+   Callback = function(Value)
+      acidTouchEnabled = Value
+
+      if connection then
+         connection:Disconnect()
+         connection = nil
+      end
+
+      if Value then
+         connection = UIS.InputBegan:Connect(function(input)
+            if not acidTouchEnabled then return end
+
+            if input.UserInputType ~= Enum.UserInputType.Touch
+            and input.UserInputType ~= Enum.UserInputType.MouseButton1 then
+               return
+            end
+
+            local ray = camera:ScreenPointToRay(input.Position.X, input.Position.Y)
+            local result = workspace:Raycast(ray.Origin, ray.Direction * 500)
+
+            if result then
+               local pos = result.Position
+
+               AcidRemote:FireServer(
+                  pos,
+                  pos + Vector3.new(0, -10, 0)
+               )
+            end
+         end)
+      end
+   end
+})
+
+
+AcidTab:CreateSlider({
+   Name = "Acid Speed",
+   Range = {0.01, 0.2},
+   Increment = 0.01,
+   CurrentValue = 0.1,
+   Callback = function(Value)
+      delayTime = Value
+   end
+})
+
+--================ SERVER =================--
+ServerTab:CreateButton({
+   Name = "Summon Zombies",
+   Callback = function()
+      game:GetService("ReplicatedStorage").Remotes.ZombieRelated.Necro.AbilityPlayer:FireServer()
+   end
+})
+
+--================ EXTRA FEATURES (MERGED) =================--
+
+--------------------------
+-- 🔫 MINIGUN SNIPER
+--------------------------
+WeaponsTab:CreateButton({
+   Name = "Minigun Sniper",
+   Callback = function()
+      local plr = game.Players.LocalPlayer
+      local char = plr.Character or plr.CharacterAdded:Wait()
+
+      game:GetService("ReplicatedStorage")
+      .Remotes.Shop.EquipWeapon:InvokeServer("Sniper")
+
+      task.wait(0.3)
+
+      local sniper = plr:FindFirstChild("Sniper", true) or char:FindFirstChild("Sniper", true)
+      if not sniper then return end
+
+      local scr = getsenv(sniper:FindFirstChildOfClass("LocalScript"))
+      if not scr or not scr.FireGun then return end
+
+      local shoot = debug.getupvalue(scr.FireGun, 5)
+      local calc = debug.getupvalue(scr.FireGun, 6)
+
+      local mouse = plr:GetMouse()
+      local firing = false
+
+      mouse.Button1Down:Connect(function()
+         if firing then return end
+         firing = true
+
+         while firing and sniper.Parent == char do
+            pcall(function()
+               shoot(sniper.Handle.Position, calc(mouse.X, mouse.Y))
+            end)
+            task.wait()
+         end
+      end)
+
+      mouse.Button1Up:Connect(function()
+         firing = false
+      end)
+   end
+})
+
+--------------------------
+-- 🔴 ACID AURA (SMART)
+--------------------------
+AcidTab:CreateSection("Aura")
+
+local auraRadius = 80
+local auraShots = 60
+local auraEnabled = false
+
+task.spawn(function()
+   while true do
+      if auraEnabled then
+         local char = plr.Character
+         if char and char:FindFirstChild("HumanoidRootPart") then
+            local root = char.HumanoidRootPart
+
+            for i = 1, auraShots do
+               if not auraEnabled then break end
+
+               local offset = Vector3.new(
+                  math.random(-auraRadius, auraRadius),
+                  0,
+                  math.random(-auraRadius, auraRadius)
+               )
+
+               local pos = root.Position + offset
+               AcidRemote:FireServer(pos, pos)
+            end
+         end
+      end
+      task.wait(0.15)
+   end
+end)
+
+AcidTab:CreateSlider({
+   Name = "Aura Radius",
+   Range = {20, 150},
+   Increment = 5,
+   CurrentValue = auraRadius,
+   Callback = function(v)
+      auraRadius = v
+   end
+})
+
+AcidTab:CreateSlider({
+   Name = "Aura Shots",
+   Range = {10, 150},
+   Increment = 5,
+   CurrentValue = auraShots,
+   Callback = function(v)
+      auraShots = v
+   end
+})
+
+AcidTab:CreateToggle({
+   Name = "Acid Aura",
+   CurrentValue = false,
+   Callback = function(v)
+      auraEnabled = v
+   end
+})
+
+--------------------------
+-- 🟢 ACID CIRCLE
+--------------------------
+AcidTab:CreateSection("Circle")
+
+local circleRadius = 6
+local circleShots = 10
+local circleEnabled = false
+
+task.spawn(function()
+   while true do
+      if circleEnabled then
+         local char = plr.Character
+         if char and char:FindFirstChild("HumanoidRootPart") then
+            local root = char.HumanoidRootPart
+
+            local step = math.pi * 2 / circleShots
+
+            for i = 0, circleShots - 1 do
+               if not circleEnabled then break end
+
+               local angle = i * step
+               local offset = Vector3.new(
+                  math.cos(angle) * circleRadius,
+                  0,
+                  math.sin(angle) * circleRadius
+               )
+
+               local pos = root.Position + offset
+               AcidRemote:FireServer(pos, pos)
+            end
+         end
+      end
+      task.wait(0.2)
+   end
+end)
+
+AcidTab:CreateSlider({
+   Name = "Circle Radius",
+   Range = {2, 25},
+   Increment = 1,
+   CurrentValue = circleRadius,
+   Callback = function(v)
+      circleRadius = v
+   end
+})
+
+AcidTab:CreateSlider({
+   Name = "Circle Shots",
+   Range = {4, 25},
+   Increment = 1,
+   CurrentValue = circleShots,
+   Callback = function(v)
+      circleShots = v
+   end
+})
+
+AcidTab:CreateToggle({
+   Name = "Circle Acid",
+   CurrentValue = false,
+   Callback = function(v)
+      circleEnabled = v
+   end
+})
+
+--================ MORE FEATURES =================--
+
+--------------------------
+-- 🎯 AUTO TARGET NEAREST
+--------------------------
+AcidTab:CreateSection("Auto Target")
+
+local autoTarget = false
+local autoDelay = 0.2
+
+local function getNearest()
+   local closest, dist = nil, math.huge
+   for _,v in game.Players:GetPlayers() do
+      if v ~= plr and v.Character and v.Character:FindFirstChild("HumanoidRootPart") then
+         local d = (plr.Character.HumanoidRootPart.Position - v.Character.HumanoidRootPart.Position).Magnitude
+         if d < dist then
+            dist = d
+            closest = v
+         end
+      end
+   end
+   return closest
+end
+
+task.spawn(function()
+   while true do
+      if autoTarget then
+         local target = getNearest()
+         if target then
+            local root = target.Character.HumanoidRootPart
+            for i = 1, hitAmount do
+               AcidRemote:FireServer(root.Position + Vector3.new(0,10,0), root.Position)
+            end
+         end
+      end
+      task.wait(autoDelay)
+   end
+end)
+
+AcidTab:CreateToggle({
+   Name = "Auto Target Nearest",
+   CurrentValue = false,
+   Callback = function(v)
+      autoTarget = v
+   end
+})
+
+AcidTab:CreateSlider({
+   Name = "Auto Delay",
+   Range = {0.05, 0.5},
+   Increment = 0.05,
+   CurrentValue = 0.2,
+   Callback = function(v)
+      autoDelay = v
+   end
+})
+
+--------------------------
+-- 🌧️ ACID RAIN (SAFE)
+--------------------------
+AcidTab:CreateSection("Rain")
+
+local rainEnabled = false
+
+task.spawn(function()
+   while true do
+      if rainEnabled then
+         for x = -100, 100, 40 do
+            for z = -100, 100, 40 do
+               AcidRemote:FireServer(
+                  Vector3.new(x, 200, z),
+                  Vector3.new(x, 0, z)
+               )
+            end
+         end
+      end
+      task.wait(0.5)
+   end
+end)
+
+AcidTab:CreateToggle({
+   Name = "Acid Rain",
+   CurrentValue = false,
+   Callback = function(v)
+      rainEnabled = v
+   end
+})
+
+--------------------------
+-- 💀 ZOMBIE LOOP
+--------------------------
+ServerTab:CreateSection("Zombie")
+
+local zombieLoop = false
+
+task.spawn(function()
+   while true do
+      if zombieLoop then
+         game:GetService("ReplicatedStorage")
+         .Remotes.ZombieRelated.Necro.AbilityPlayer:FireServer()
+      end
+      task.wait(0.5)
+   end
+end)
+
+ServerTab:CreateToggle({
+   Name = "Zombie Spam",
+   CurrentValue = false,
+   Callback = function(v)
+      zombieLoop = v
+   end
+})
+
+--------------------------
+-- ⚡ PLAYER MODS
+--------------------------
+ClientTab:CreateSection("Player Mods")
+
+ClientTab:CreateSlider({
+   Name = "WalkSpeed",
+   Range = {16, 100},
+   Increment = 1,
+   CurrentValue = 16,
+   Callback = function(v)
+      if plr.Character and plr.Character:FindFirstChildOfClass("Humanoid") then
+         plr.Character:FindFirstChildOfClass("Humanoid").WalkSpeed = v
+      end
+   end
+})
+
+ClientTab:CreateSlider({
+   Name = "JumpPower",
+   Range = {50, 200},
+   Increment = 5,
+   CurrentValue = 50,
+   Callback = function(v)
+      if plr.Character and plr.Character:FindFirstChildOfClass("Humanoid") then
+         plr.Character:FindFirstChildOfClass("Humanoid").JumpPower = v
+      end
+   end
+})
+
+--------------------------
+-- 🔄 REJOIN BUTTON
+--------------------------
+ServerTab:CreateButton({
+   Name = "Rejoin Server",
+   Callback = function()
+      game:GetService("TeleportService"):TeleportToPlaceInstance(
+         game.PlaceId,
+         game.JobId,
+         plr
+      )
+   end
+})
+
+-- 🔫 AUTO GUN ZOMBIE KILL
+ServerTab:CreateSection("Gun Zombie Kill")
+
+local gunKill = false
+local gunDelay = 0.1
+
+local remote = game:GetService("ReplicatedStorage").NetworkEvents.RemoteEvent
+local living = workspace:FindFirstChild("LivingThings")
+
+task.spawn(function()
+    while true do
+        if gunKill then
+            if living then
+                for _,v in living:GetChildren() do
+                    if v:FindFirstChild("Humanoid") 
+                    and v:FindFirstChild("HumanoidRootPart") then
+
+                        if v.Humanoid.Health > 0 then
+                            -- 🔥 THIS is gun damage
+                            pcall(function()
+                                remote:FireServer("GUN_DAMAGE", v)
+                            end)
+                        end
+
+                    end
+                end
+            end
+        end
+        task.wait(gunDelay)
+    end
+end)
+
+ServerTab:CreateToggle({
+    Name = "Gun Kill Zombies",
+    CurrentValue = false,
+    Callback = function(v)
+        gunKill = v
+    end
+})
+
+ServerTab:CreateSlider({
+    Name = "Gun Speed",
+    Range = {0.01, 0.3},
+    Increment = 0.01,
+    CurrentValue = 0.1,
+    Callback = function(v)
+        gunDelay = v
+    end
+})
+
+-- 🎯 ACID TARGET SPAM
+--================ TOUCH TARGET ACID =================--
+local touchTargetEnabled = false
+local targetPlayer = nil
+local highlight = nil
+
+AcidTab:CreateSection("Touch Target")
+
+-- Toggle
+AcidTab:CreateToggle({
+   Name = "Touch Target Acid",
+   CurrentValue = false,
+   Callback = function(Value)
+      touchTargetEnabled = Value
+
+      if not Value then
+         targetPlayer = nil
+         if highlight then
+            highlight:Destroy()
+            highlight = nil
+         end
+      end
+   end
+})
+
+AcidTab:CreateSlider({
+   Name = "Hit Amount",
+   Range = {1, 15},
+   Increment = 1,
+   CurrentValue = 1,
+   Callback = function(Value)
+      hitAmount = Value
+   end
+})
+
+-- Detect tap / click
+UIS.InputBegan:Connect(function(input)
+   if not touchTargetEnabled then return end
+
+   if input.UserInputType ~= Enum.UserInputType.Touch
+   and input.UserInputType ~= Enum.UserInputType.MouseButton1 then
+      return
+   end
+
+   local ray = camera:ScreenPointToRay(input.Position.X, input.Position.Y)
+   local result = workspace:Raycast(ray.Origin, ray.Direction * 500)
+
+   if result and result.Instance then
+      local model = result.Instance:FindFirstAncestorOfClass("Model")
+      local player = game.Players:GetPlayerFromCharacter(model)
+
+      if player then
+         targetPlayer = player
+
+         -- remove old highlight
+         if highlight then
+            highlight:Destroy()
+         end
+
+         -- add highlight
+         highlight = Instance.new("Highlight")
+         highlight.Parent = model
+         highlight.FillColor = Color3.fromRGB(0,255,0)
+      end
+   end
+end)
+
+-- Acid loop (TARGETED)
+task.spawn(function()
+   while true do
+      if touchTargetEnabled and targetPlayer then
+         if targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart") then
+            local root = targetPlayer.Character.HumanoidRootPart
+
+            for i = 1, hitAmount do
+   AcidRemote:FireServer(
+      root.Position + Vector3.new(0,10,0),
+      root.Position
+   )
+end
+         end
+      end
+
+      task.wait(0.1)
+   end
+end)
+
+ServerTab:CreateButton({
+   Name = "Remote Spy",
+   Callback = function()
+      loadstring(game:HttpGet("https://raw.githubusercontent.com/Klinac/scripts/main/utopia_spy.lua"))()
+   end
+})
+
+--================ LANDMINES =================--
+
+local mineAura = false
+local mineCircle = false
+
+ServerTab:CreateSection("Landmines")
+
+-- Single place
+ServerTab:CreateButton({
+   Name = "Single Place Landmine",
+   Callback = function()
+      game:GetService("ReplicatedStorage").NetworkEvents.RemoteEvent:FireServer("PLACE_LANDMINE")
+   end
+})
+
+-- Loop spawn
+ServerTab:CreateToggle({
+   Name = "Loop Spawn Landmines",
+   CurrentValue = false,
+   Callback = function(Value)
+      mineAura = Value
+   end
+})
+
+-- Circle spawn
+ServerTab:CreateToggle({
+   Name = "Landmine Circle",
+   CurrentValue = false,
+   Callback = function(Value)
+      mineCircle = Value
+   end
+})
+
+-- Loop handler
+task.spawn(function()
+   while true do
+      if mineAura then
+         game:GetService("ReplicatedStorage").NetworkEvents.RemoteEvent:FireServer("PLACE_LANDMINE")
+      end
+
+      if mineCircle then
+         local plr = game.Players.LocalPlayer
+         local char = plr.Character
+         if char and char:FindFirstChild("HumanoidRootPart") then
+            local root = char.HumanoidRootPart
+            local old = root.CFrame
+
+            for i = 0, 360, 60 do
+               root.CFrame = old + Vector3.new(
+                  math.cos(math.rad(i)) * 6,
+                  0,
+                  math.sin(math.rad(i)) * 6
+               )
+
+               game:GetService("ReplicatedStorage").NetworkEvents.RemoteEvent:FireServer("PLACE_LANDMINE")
+            end
+
+            root.CFrame = old
+         end
+      end
+
+      task.wait(0.15)
+   end
+end)
+
+--================ CLIENT =================--
+ClientTab:CreateToggle({
+   Name = "ESP",
+   CurrentValue = false,
+   Callback = function(Value)
+      for _,p in game.Players:GetPlayers() do
+         if p ~= plr and p.Character then
+            if Value then
+               local h = Instance.new("Highlight")
+               h.Parent = p.Character
+               h.FillColor = p.TeamColor.Color
+            else
+               if p.Character:FindFirstChild("Highlight") then
+                  p.Character.Highlight:Destroy()
+               end
+            end
+         end
+      end
+   end
+})
