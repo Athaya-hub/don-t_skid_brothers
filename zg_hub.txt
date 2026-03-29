@@ -794,15 +794,14 @@ ClientTab:CreateToggle({
    end
 })
 
-local player = game.Players.LocalPlayer
-
-local shooting = false
-
 ClientTab:CreateToggle({
    Name = "Raygun No Cooldown",
    CurrentValue = false,
    Callback = function(v)
-      shooting = v
+      getgenv().raygunSpam = v
+
+      local player = game.Players.LocalPlayer
+      local mouse = player:GetMouse()
 
       local Remote = game:GetService("ReplicatedStorage")
          :WaitForChild("Remotes")
@@ -810,22 +809,23 @@ ClientTab:CreateToggle({
          :WaitForChild("ReplicateBullet")
 
       task.spawn(function()
-         while shooting do
+         while getgenv().raygunSpam do
             pcall(function()
                local hit = mouse.Hit
                if not hit then return end
 
-               local pos = hit.Position
+               local targetPos = hit.Position
+               local origin = workspace.CurrentCamera.CFrame.Position
 
                Remote:FireServer(
                   {
-                     pos,
-                     Vector3.new(1,0,0),
-                     workspace
+                     targetPos,
+                     (targetPos - origin).Unit,
+                     workspace:WaitForChild("Map")
                   },
                   {
-                     pos,
-                     pos
+                     origin,
+                     targetPos
                   },
                   "Raygun"
                )
