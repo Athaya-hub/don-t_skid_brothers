@@ -1,0 +1,591 @@
+-- ============================================================
+--  ITEM TOOLS  |  Standalone
+--  Item Grabber + Item Editor with toggle menu
+--  Toggle: RightBracket key  ]
+-- ============================================================
+local Players          = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local player           = Players.LocalPlayer
+
+-- ============================================================
+--  THEME
+-- ============================================================
+local BG     = Color3.fromRGB(18, 18, 26)
+local BG2    = Color3.fromRGB(26, 26, 38)
+local BG3    = Color3.fromRGB(34, 34, 50)
+local ACCENT = Color3.fromRGB(255, 140, 0)
+local TEXT   = Color3.fromRGB(245, 245, 255)
+local SUBTEXT= Color3.fromRGB(155, 155, 190)
+local BORDER = Color3.fromRGB(55, 55, 80)
+local GREEN  = Color3.fromRGB(60, 200, 100)
+local RED    = Color3.fromRGB(220, 60, 60)
+
+-- ============================================================
+--  GUI ROOT
+-- ============================================================
+local gui = Instance.new("ScreenGui")
+gui.Name = "ItemToolsGUI"
+gui.ResetOnSpawn = false
+gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+local _ok = pcall(function() gui.Parent = game:GetService("CoreGui") end)
+if not _ok or not gui.Parent then gui.Parent = player.PlayerGui end
+
+-- ============================================================
+--  HELPERS
+-- ============================================================
+local function makeCorner(parent, r)
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(0, r or 8)
+    c.Parent = parent
+    return c
+end
+
+local function makeStroke(parent, col, thick)
+    local s = Instance.new("UIStroke")
+    s.Color = col or BORDER
+    s.Thickness = thick or 1
+    s.Parent = parent
+    return s
+end
+
+local function makeLabel(parent, text, size, color, xAlign)
+    local l = Instance.new("TextLabel")
+    l.BackgroundTransparency = 1
+    l.Text = text
+    l.TextSize = size or 13
+    l.TextColor3 = color or TEXT
+    l.Font = Enum.Font.GothamBold
+    l.TextXAlignment = xAlign or Enum.TextXAlignment.Left
+    l.Parent = parent
+    return l
+end
+
+-- ============================================================
+--  TOGGLE MENU  (small pill bar)
+-- ============================================================
+local menuBar = Instance.new("Frame")
+menuBar.Size = UDim2.new(0, 280, 0, 38)
+menuBar.Position = UDim2.new(0.5, -140, 0, 8)
+menuBar.BackgroundColor3 = BG2
+menuBar.BorderSizePixel = 0
+menuBar.Active = true
+menuBar.Draggable = true
+menuBar.Visible = true
+menuBar.Parent = gui
+makeCorner(menuBar, 10)
+makeStroke(menuBar, ACCENT, 1.5)
+
+-- Accent top bar
+local menuAccent = Instance.new("Frame")
+menuAccent.Size = UDim2.new(1, 0, 0, 2)
+menuAccent.BackgroundColor3 = ACCENT
+menuAccent.BorderSizePixel = 0
+menuAccent.Parent = menuBar
+makeCorner(menuAccent, 10)
+
+local menuTitle = Instance.new("TextLabel")
+menuTitle.Size = UDim2.new(0.4, 0, 1, 0)
+menuTitle.Position = UDim2.new(0, 10, 0, 0)
+menuTitle.BackgroundTransparency = 1
+menuTitle.Text = "Item Tools"
+menuTitle.TextColor3 = ACCENT
+menuTitle.Font = Enum.Font.GothamBold
+menuTitle.TextSize = 12
+menuTitle.TextXAlignment = Enum.TextXAlignment.Left
+menuTitle.Parent = menuBar
+
+local menuHint = Instance.new("TextLabel")
+menuHint.Size = UDim2.new(0.45, 0, 1, 0)
+menuHint.Position = UDim2.new(0.54, 0, 0, 0)
+menuHint.BackgroundTransparency = 1
+menuHint.Text = "] = toggle"
+menuHint.TextColor3 = SUBTEXT
+menuHint.Font = Enum.Font.Gotham
+menuHint.TextSize = 10
+menuHint.TextXAlignment = Enum.TextXAlignment.Right
+menuHint.Parent = menuBar
+local pad = Instance.new("UIPadding") pad.PaddingRight = UDim.new(0, 8) pad.Parent = menuHint
+
+-- Toggle buttons in menu bar
+local function makeMenuToggleBtn(label, xPos, width)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0, width, 0, 24)
+    btn.Position = UDim2.new(0, xPos, 0.5, -12)
+    btn.BackgroundColor3 = BG3
+    btn.BorderSizePixel = 0
+    btn.Text = label
+    btn.TextColor3 = SUBTEXT
+    btn.Font = Enum.Font.Gotham
+    btn.TextSize = 11
+    btn.Parent = menuBar
+    makeCorner(btn, 5)
+    makeStroke(btn, BORDER, 1)
+    return btn
+end
+
+local grabberToggleBtn = makeMenuToggleBtn("Grabber", 110, 72)
+local editorToggleBtn  = makeMenuToggleBtn("Editor",  188, 62)
+
+-- ============================================================
+--  SHARED PANEL BUILDER
+-- ============================================================
+local function makePanel(title, w, h, x, y)
+    local panel = Instance.new("Frame")
+    panel.Size = UDim2.new(0, w, 0, h)
+    panel.Position = UDim2.new(0, x, 0, y)
+    panel.BackgroundColor3 = BG
+    panel.BorderSizePixel = 0
+    panel.Active = true
+    panel.Draggable = true
+    panel.Visible = false
+    panel.Parent = gui
+    makeCorner(panel, 10)
+    makeStroke(panel, BORDER, 1.5)
+
+    local accent = Instance.new("Frame")
+    accent.Size = UDim2.new(1, 0, 0, 2)
+    accent.BackgroundColor3 = ACCENT
+    accent.BorderSizePixel = 0
+    accent.Parent = panel
+    makeCorner(accent, 10)
+
+    local titleLbl = Instance.new("TextLabel")
+    titleLbl.Size = UDim2.new(1, -44, 0, 32)
+    titleLbl.Position = UDim2.new(0, 10, 0, 2)
+    titleLbl.BackgroundTransparency = 1
+    titleLbl.Text = title
+    titleLbl.TextColor3 = TEXT
+    titleLbl.Font = Enum.Font.GothamBold
+    titleLbl.TextSize = 12
+    titleLbl.TextXAlignment = Enum.TextXAlignment.Left
+    titleLbl.Parent = panel
+
+    local closeBtn = Instance.new("TextButton")
+    closeBtn.Size = UDim2.new(0, 22, 0, 22)
+    closeBtn.Position = UDim2.new(1, -28, 0, 6)
+    closeBtn.BackgroundColor3 = Color3.fromRGB(80, 25, 25)
+    closeBtn.BorderSizePixel = 0
+    closeBtn.Text = "x"
+    closeBtn.TextColor3 = TEXT
+    closeBtn.Font = Enum.Font.GothamBold
+    closeBtn.TextSize = 12
+    closeBtn.Parent = panel
+    makeCorner(closeBtn, 4)
+    closeBtn.MouseButton1Click:Connect(function()
+        panel.Visible = false
+    end)
+
+    local divider = Instance.new("Frame")
+    divider.Size = UDim2.new(1, -16, 0, 1)
+    divider.Position = UDim2.new(0, 8, 0, 34)
+    divider.BackgroundColor3 = BORDER
+    divider.BorderSizePixel = 0
+    divider.Parent = panel
+
+    local scroll = Instance.new("ScrollingFrame")
+    scroll.Size = UDim2.new(1, -10, 1, -44)
+    scroll.Position = UDim2.new(0, 5, 0, 40)
+    scroll.BackgroundTransparency = 1
+    scroll.BorderSizePixel = 0
+    scroll.ScrollBarThickness = 3
+    scroll.ScrollBarImageColor3 = ACCENT
+    scroll.Parent = panel
+
+    local layout = Instance.new("UIListLayout")
+    layout.Padding = UDim.new(0, 4)
+    layout.Parent = scroll
+    layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        scroll.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + 6)
+    end)
+
+    local contentPad = Instance.new("UIPadding")
+    contentPad.PaddingTop = UDim.new(0, 4)
+    contentPad.PaddingLeft = UDim.new(0, 4)
+    contentPad.PaddingRight = UDim.new(0, 4)
+    contentPad.Parent = scroll
+
+    return panel, scroll
+end
+
+-- ============================================================
+--  ITEM GRABBER PANEL
+-- ============================================================
+local grabberPanel, grabberScroll = makePanel("  Item Grabber", 260, 320, 20, 60)
+
+local scanBtn = Instance.new("TextButton")
+scanBtn.Size = UDim2.new(1, -16, 0, 28)
+scanBtn.Position = UDim2.new(0, 8, 0, 36)
+scanBtn.BackgroundColor3 = ACCENT
+scanBtn.BorderSizePixel = 0
+scanBtn.Text = "Scan for Items"
+scanBtn.TextColor3 = TEXT
+scanBtn.Font = Enum.Font.GothamBold
+scanBtn.TextSize = 12
+scanBtn.Parent = grabberPanel
+makeCorner(scanBtn, 6)
+
+-- Shift scroll down to account for scan button
+grabberScroll.Size = UDim2.new(1, -10, 1, -76)
+grabberScroll.Position = UDim2.new(0, 5, 0, 72)
+
+local function makeItemRow(name)
+    local row = Instance.new("Frame")
+    row.Size = UDim2.new(1, 0, 0, 30)
+    row.BackgroundColor3 = BG2
+    row.BorderSizePixel = 0
+    row.Parent = grabberScroll
+    makeCorner(row, 5)
+    makeStroke(row, BORDER, 1)
+
+    local dot = Instance.new("Frame")
+    dot.Size = UDim2.new(0, 6, 0, 6)
+    dot.Position = UDim2.new(0, 8, 0.5, -3)
+    dot.BackgroundColor3 = ACCENT
+    dot.BorderSizePixel = 0
+    dot.Parent = row
+    makeCorner(dot, 3)
+
+    local nameLbl = Instance.new("TextLabel")
+    nameLbl.Size = UDim2.new(0.6, 0, 1, 0)
+    nameLbl.Position = UDim2.new(0, 20, 0, 0)
+    nameLbl.BackgroundTransparency = 1
+    nameLbl.Text = name
+    nameLbl.TextColor3 = TEXT
+    nameLbl.Font = Enum.Font.Gotham
+    nameLbl.TextSize = 11
+    nameLbl.TextXAlignment = Enum.TextXAlignment.Left
+    nameLbl.Parent = row
+
+    local grabBtn = Instance.new("TextButton")
+    grabBtn.Size = UDim2.new(0.32, -2, 0, 20)
+    grabBtn.Position = UDim2.new(0.66, 2, 0.5, -10)
+    grabBtn.BackgroundColor3 = ACCENT
+    grabBtn.BorderSizePixel = 0
+    grabBtn.Text = "Grab"
+    grabBtn.TextColor3 = TEXT
+    grabBtn.Font = Enum.Font.GothamBold
+    grabBtn.TextSize = 10
+    grabBtn.Parent = row
+    makeCorner(grabBtn, 4)
+
+    local rowStroke = row:FindFirstChildOfClass("UIStroke")
+
+    grabBtn.MouseButton1Click:Connect(function()
+        local ok = false
+
+        -- Method 1: ReplicatedStorage
+        pcall(function()
+            local t = game:GetService("ReplicatedStorage"):FindFirstChild(name, true)
+            if t and t:IsA("Tool") then
+                t:Clone().Parent = player.Character
+                t:Clone().Parent = player.StarterGear
+                ok = true
+            end
+        end)
+
+        -- Method 2: Workspace dropped tools
+        if not ok then
+            pcall(function()
+                for _, obj in pairs(workspace:GetDescendants()) do
+                    if obj:IsA("Tool") and obj.Name == name then
+                        obj:Clone().Parent = player.Character
+                        ok = true break
+                    end
+                end
+            end)
+        end
+
+        -- Method 3: Fire give remotes
+        if not ok then
+            pcall(function()
+                for _, remote in pairs(game:GetService("ReplicatedStorage"):GetDescendants()) do
+                    if remote:IsA("RemoteEvent") then
+                        local n = remote.Name:lower()
+                        if n:find("give") or n:find("equip") or n:find("tool") then
+                            remote:FireServer(name)
+                            ok = true
+                        end
+                    end
+                end
+            end)
+        end
+
+        if ok then
+            rowStroke.Color = GREEN
+            grabBtn.BackgroundColor3 = GREEN
+            grabBtn.Text = "Got it"
+            dot.BackgroundColor3 = GREEN
+        else
+            rowStroke.Color = RED
+            grabBtn.BackgroundColor3 = RED
+            grabBtn.Text = "Failed"
+            dot.BackgroundColor3 = RED
+        end
+
+        task.delay(2, function()
+            pcall(function()
+                rowStroke.Color = BORDER
+                grabBtn.BackgroundColor3 = ACCENT
+                grabBtn.Text = "Grab"
+                dot.BackgroundColor3 = ACCENT
+            end)
+        end)
+    end)
+end
+
+local function scanItems()
+    for _, c in pairs(grabberScroll:GetChildren()) do
+        if not c:IsA("UIListLayout") and not c:IsA("UIPadding") then c:Destroy() end
+    end
+
+    local found = {}
+    local function addTool(t)
+        if t:IsA("Tool") and not table.find(found, t.Name) then
+            table.insert(found, t.Name)
+        end
+    end
+
+    for _, o in pairs(game:GetService("ReplicatedStorage"):GetDescendants()) do addTool(o) end
+    for _, o in pairs(workspace:GetDescendants()) do addTool(o) end
+    for _, o in pairs(game:GetService("StarterPack"):GetChildren()) do addTool(o) end
+
+    if #found == 0 then
+        local noLbl = Instance.new("TextLabel")
+        noLbl.Size = UDim2.new(1, 0, 0, 26)
+        noLbl.BackgroundTransparency = 1
+        noLbl.Text = "No tools found in game"
+        noLbl.TextColor3 = SUBTEXT
+        noLbl.Font = Enum.Font.Gotham
+        noLbl.TextSize = 11
+        noLbl.Parent = grabberScroll
+        scanBtn.Text = "Scan for Items"
+        return
+    end
+
+    for _, name in ipairs(found) do
+        makeItemRow(name)
+    end
+
+    scanBtn.Text = "Rescan  (" .. #found .. " found)"
+end
+
+scanBtn.MouseButton1Click:Connect(scanItems)
+
+-- ============================================================
+--  ITEM / VALUE EDITOR PANEL
+-- ============================================================
+local editorPanel, editorScroll = makePanel("  Value Editor", 270, 360, 290, 60)
+
+local rescanValBtn = Instance.new("TextButton")
+rescanValBtn.Size = UDim2.new(1, -16, 0, 28)
+rescanValBtn.Position = UDim2.new(0, 8, 0, 36)
+rescanValBtn.BackgroundColor3 = ACCENT
+rescanValBtn.BorderSizePixel = 0
+rescanValBtn.Text = "Scan Values"
+rescanValBtn.TextColor3 = TEXT
+rescanValBtn.Font = Enum.Font.GothamBold
+rescanValBtn.TextSize = 12
+rescanValBtn.Parent = editorPanel
+makeCorner(rescanValBtn, 6)
+
+editorScroll.Size = UDim2.new(1, -10, 1, -76)
+editorScroll.Position = UDim2.new(0, 5, 0, 72)
+
+local function makeValueRow(valueObj)
+    local row = Instance.new("Frame")
+    row.Size = UDim2.new(1, 0, 0, 52)
+    row.BackgroundColor3 = BG2
+    row.BorderSizePixel = 0
+    row.Parent = editorScroll
+    makeCorner(row, 5)
+    makeStroke(row, BORDER, 1)
+    local rowStroke = row:FindFirstChildOfClass("UIStroke")
+
+    local nameLbl = Instance.new("TextLabel")
+    nameLbl.Size = UDim2.new(1, -8, 0, 22)
+    nameLbl.Position = UDim2.new(0, 8, 0, 3)
+    nameLbl.BackgroundTransparency = 1
+    nameLbl.Text = valueObj.Name .. "  =  " .. tostring(valueObj.Value)
+    nameLbl.TextColor3 = TEXT
+    nameLbl.Font = Enum.Font.Gotham
+    nameLbl.TextSize = 11
+    nameLbl.TextXAlignment = Enum.TextXAlignment.Left
+    nameLbl.Parent = row
+
+    -- Live update label
+    valueObj:GetPropertyChangedSignal("Value"):Connect(function()
+        pcall(function()
+            nameLbl.Text = valueObj.Name .. "  =  " .. tostring(valueObj.Value)
+        end)
+    end)
+
+    local inputBox = Instance.new("TextBox")
+    inputBox.Size = UDim2.new(0.58, -4, 0, 22)
+    inputBox.Position = UDim2.new(0, 8, 0, 26)
+    inputBox.BackgroundColor3 = BG3
+    inputBox.BorderSizePixel = 0
+    inputBox.Text = tostring(valueObj.Value)
+    inputBox.TextColor3 = TEXT
+    inputBox.Font = Enum.Font.Gotham
+    inputBox.TextSize = 11
+    inputBox.ClearTextOnFocus = false
+    inputBox.Parent = row
+    makeCorner(inputBox, 4)
+    local ibPad = Instance.new("UIPadding") ibPad.PaddingLeft = UDim.new(0, 5) ibPad.Parent = inputBox
+
+    local setBtn = Instance.new("TextButton")
+    setBtn.Size = UDim2.new(0.38, -4, 0, 22)
+    setBtn.Position = UDim2.new(0.62, 0, 0, 26)
+    setBtn.BackgroundColor3 = ACCENT
+    setBtn.BorderSizePixel = 0
+    setBtn.Text = "Set"
+    setBtn.TextColor3 = TEXT
+    setBtn.Font = Enum.Font.GothamBold
+    setBtn.TextSize = 11
+    setBtn.Parent = row
+    makeCorner(setBtn, 4)
+
+    setBtn.MouseButton1Click:Connect(function()
+        local num = tonumber(inputBox.Text)
+        if num then
+            pcall(function() valueObj.Value = num end)
+
+            -- Try firing sync remotes
+            pcall(function()
+                for _, remote in pairs(game:GetService("ReplicatedStorage"):GetDescendants()) do
+                    if remote:IsA("RemoteEvent") then
+                        local n = remote.Name:lower()
+                        if n:find("update") or n:find("set") or n:find("sync") then
+                            remote:FireServer(valueObj.Name, num)
+                        end
+                    end
+                end
+            end)
+
+            setBtn.Text = "Done"
+            setBtn.BackgroundColor3 = GREEN
+            rowStroke.Color = GREEN
+        else
+            setBtn.Text = "Bad"
+            setBtn.BackgroundColor3 = RED
+            rowStroke.Color = RED
+        end
+
+        task.delay(1.5, function()
+            pcall(function()
+                setBtn.Text = "Set"
+                setBtn.BackgroundColor3 = ACCENT
+                rowStroke.Color = BORDER
+            end)
+        end)
+    end)
+end
+
+local function scanValues()
+    for _, c in pairs(editorScroll:GetChildren()) do
+        if not c:IsA("UIListLayout") and not c:IsA("UIPadding") then c:Destroy() end
+    end
+
+    local found = {}
+
+    local function addV(o)
+        if o:IsA("NumberValue") or o:IsA("IntValue") then
+            table.insert(found, o)
+        end
+    end
+
+    -- Scan character
+    if player.Character then
+        for _, o in pairs(player.Character:GetDescendants()) do addV(o) end
+    end
+
+    -- Scan leaderstats
+    if player:FindFirstChild("leaderstats") then
+        for _, o in pairs(player.leaderstats:GetChildren()) do addV(o) end
+    end
+
+    -- Scan player children and folders
+    for _, o in pairs(player:GetChildren()) do
+        addV(o)
+        if o:IsA("Folder") then
+            for _, c in pairs(o:GetChildren()) do addV(c) end
+        end
+    end
+
+    -- Scan PlayerGui
+    for _, o in pairs(player.PlayerGui:GetDescendants()) do addV(o) end
+
+    if #found == 0 then
+        local noLbl = Instance.new("TextLabel")
+        noLbl.Size = UDim2.new(1, 0, 0, 26)
+        noLbl.BackgroundTransparency = 1
+        noLbl.Text = "No editable values found"
+        noLbl.TextColor3 = SUBTEXT
+        noLbl.Font = Enum.Font.Gotham
+        noLbl.TextSize = 11
+        noLbl.Parent = editorScroll
+        rescanValBtn.Text = "Scan Values"
+        return
+    end
+
+    for _, v in ipairs(found) do
+        makeValueRow(v)
+    end
+
+    rescanValBtn.Text = "Rescan  (" .. #found .. " found)"
+end
+
+rescanValBtn.MouseButton1Click:Connect(scanValues)
+
+-- ============================================================
+--  MENU TOGGLE BUTTON LOGIC
+-- ============================================================
+local function styleMenuBtn(btn, active)
+    if active then
+        btn.BackgroundColor3 = ACCENT
+        btn.TextColor3 = TEXT
+        local s = btn:FindFirstChildOfClass("UIStroke")
+        if s then s.Color = ACCENT end
+    else
+        btn.BackgroundColor3 = BG3
+        btn.TextColor3 = SUBTEXT
+        local s = btn:FindFirstChildOfClass("UIStroke")
+        if s then s.Color = BORDER end
+    end
+end
+
+grabberToggleBtn.MouseButton1Click:Connect(function()
+    grabberPanel.Visible = not grabberPanel.Visible
+    styleMenuBtn(grabberToggleBtn, grabberPanel.Visible)
+    if grabberPanel.Visible then
+        task.wait(0.05)
+        scanItems()
+    end
+end)
+
+editorToggleBtn.MouseButton1Click:Connect(function()
+    editorPanel.Visible = not editorPanel.Visible
+    styleMenuBtn(editorToggleBtn, editorPanel.Visible)
+    if editorPanel.Visible then
+        task.wait(0.05)
+        scanValues()
+    end
+end)
+
+-- ============================================================
+--  KEYBIND  ] = toggle entire menu bar
+-- ============================================================
+UserInputService.InputBegan:Connect(function(input, gpe)
+    if gpe then return end
+    if input.KeyCode == Enum.KeyCode.RightBracket then
+        menuBar.Visible = not menuBar.Visible
+        if not menuBar.Visible then
+            grabberPanel.Visible = false
+            editorPanel.Visible = false
+            styleMenuBtn(grabberToggleBtn, false)
+            styleMenuBtn(editorToggleBtn, false)
+        end
+    end
+end)
+
+print("Item Tools loaded  |  ] to toggle menu")
