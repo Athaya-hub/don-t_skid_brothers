@@ -708,6 +708,65 @@ ServerTab:CreateButton({
    end
 })
 
+ServerTab:CreateButton({
+    Name = "Acid Tool",
+    Callback = function()
+
+        local Players = game:GetService("Players")
+        local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+        local LocalPlayer = Players.LocalPlayer
+        local Mouse = LocalPlayer:GetMouse()
+
+        -- remove old one if exists
+        if LocalPlayer.Backpack:FindFirstChild("AcidTool") then
+            LocalPlayer.Backpack.AcidTool:Destroy()
+        end
+
+        -- create tool
+        local Tool = Instance.new("Tool")
+        Tool.Name = "AcidTool"
+        Tool.RequiresHandle = false
+        Tool.CanBeDropped = false
+        Tool.Parent = LocalPlayer.Backpack
+
+        Tool.Activated:Connect(function()
+
+            local pos = Mouse.Hit.Position
+
+            -- 🔥 acid remote
+            game:GetService("ReplicatedStorage")
+            .Remotes.ZombieRelated.AcidSpit
+            :FireServer(pos)
+
+        end)
+
+    end
+})
+
+local NecroAmount = 1
+
+local Input = Tab:CreateInput({
+   Name = "Necro Amount",
+   CurrentValue = "1",
+   PlaceholderText = "Enter amount",
+   RemoveTextAfterFocusLost = false,
+   Flag = "NecroAmount",
+   Callback = function(Text)
+      NecroAmount = tonumber(Text) or 1
+   end,
+})
+
+Tab:CreateButton({
+   Name = "Fire Necro",
+   Callback = function()
+      for i = 1, NecroAmount do
+         game:GetService("ReplicatedStorage")
+            .Remotes.ZombieRelated.Necro.AbilityPlayer:FireServer()
+      end
+   end,
+})
+
 --================ LANDMINES =================--
 
 local mineAura = false
@@ -773,6 +832,39 @@ task.spawn(function()
    end
 end)
 
+local CooldownManager = require(game:GetService("ReplicatedStorage").Code.CooldownManager)
+
+local bypassEnabled = false
+
+-- store originals
+local oldIsOnCooldown = CooldownManager.IsOnCooldown
+local oldCreateCooldown = CooldownManager.CreateCooldown
+
+-- hook IsOnCooldown (ignore cooldown)
+hookfunction(oldIsOnCooldown, function(...)
+    if bypassEnabled then
+        return false -- 😈 nothing is ever on cooldown
+    end
+    return oldIsOnCooldown(...)
+end)
+
+-- hook CreateCooldown (prevent cooldown from being created)
+hookfunction(oldCreateCooldown, function(...)
+    if bypassEnabled then
+        return -- 💀 block cooldown creation completely
+    end
+    return oldCreateCooldown(...)
+end)
+
+-- Rayfield Toggle
+ServerTab:CreateToggle({
+    Name = "No Cooldown 😈",
+    CurrentValue = false,
+    Callback = function(value)
+        bypassEnabled = value
+    end
+})
+
 --================ CLIENT =================--
 ClientTab:CreateToggle({
    Name = "ESP",
@@ -791,48 +883,5 @@ ClientTab:CreateToggle({
             end
          end
       end
-   end
-})
-
-ClientTab:CreateToggle({
-   Name = "Raygun No Cooldown",
-   CurrentValue = false,
-   Callback = function(v)
-      getgenv().raygunSpam = v
-
-      local player = game.Players.LocalPlayer
-      local mouse = player:GetMouse()
-
-      local Remote = game:GetService("ReplicatedStorage")
-         :WaitForChild("Remotes")
-         :WaitForChild("Guns")
-         :WaitForChild("ReplicateBullet")
-
-      task.spawn(function()
-         while getgenv().raygunSpam do
-            pcall(function()
-               local hit = mouse.Hit
-               if not hit then return end
-
-               local targetPos = hit.Position
-               local origin = workspace.CurrentCamera.CFrame.Position
-
-               Remote:FireServer(
-                  {
-                     targetPos,
-                     (targetPos - origin).Unit,
-                     workspace:WaitForChild("Map")
-                  },
-                  {
-                     origin,
-                     targetPos
-                  },
-                  "Raygun"
-               )
-            end)
-
-            task.wait(0.05)
-         end
-      end)
    end
 })
